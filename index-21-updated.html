@@ -2248,14 +2248,36 @@
             if(cb) cb();
         }
 
-        async function ensureFb(){
-            if(fb) return fb;
-            const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
-            const [appM, authM, fsM] = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-auth.js'), import(base + 'firebase-firestore.js')]);
-            const app = appM.initializeApp(FIREBASE_CONFIG);
-            fb = { auth: authM.getAuth(app), db: fsM.getFirestore(app), A: authM, F: fsM };
-            fb.A.onAuthStateChanged(fb.auth, onAuth);
-            return fb;
+       async function ensureFb(){
+    if(fb) return fb;
+
+    const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+
+    const [appM, authM, fsM] = await Promise.all([
+        import(base + 'firebase-app.js'),
+        import(base + 'firebase-auth.js'),
+        import(base + 'firebase-firestore.js')
+    ]);
+
+    const app = appM.initializeApp(FIREBASE_CONFIG);
+
+    fb = {
+        auth: authM.getAuth(app),
+        db: fsM.getFirestore(app),
+        A: authM,
+        F: fsM
+    };
+
+    // লগইন অ্যাপ বন্ধ করার পরও মনে রাখবে
+    await authM.setPersistence(
+        fb.auth,
+        authM.browserLocalPersistence
+    );
+
+    // Firebase login অবস্থার পরিবর্তন দেখবে
+    fb.A.onAuthStateChanged(fb.auth, onAuth);
+
+    return fb;
         }
 
         async function onAuth(user){
