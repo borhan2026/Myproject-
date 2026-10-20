@@ -2135,7 +2135,7 @@
             document.getElementById("loginError").innerText = "";
         }
         function updateAdminUI(){
-            let isAdmin = sessionStorage.getItem("loggedIn") === "1";
+            let isAdmin = localStorage.getItem("loggedIn") === "1";
             let adminMenu = document.getElementById("adminMenuBlock");
             let menuWrap = document.getElementById("menuWrap");
             if(adminMenu) adminMenu.style.display = isAdmin ? "block" : "none";
@@ -2148,7 +2148,7 @@
             let adminUser = settings.adminUser || "admin";
             let adminPass = settings.adminPass || "admin123";
             if(u === adminUser && p === adminPass){
-                sessionStorage.setItem("loggedIn", "1");
+                localStorage.setItem("loggedIn", "1")
                 hideLoginOverlay();
                 document.getElementById("loginUser").value = "";
                 document.getElementById("loginPass").value = "";
@@ -2159,7 +2159,7 @@
             }
         }
         function logout(){
-            sessionStorage.removeItem("loggedIn");
+            localStorage.removeItem("loggedIn")
             location.reload();
         }
 
@@ -2292,8 +2292,7 @@
               <p>মেসেজ চালু করতে Firebase সংযোগ দরকার। ফাইলের নিচের দিকে <b>FIREBASE_CONFIG</b> ও <b>ADMIN_EMAIL</b> এ আপনার তথ্য বসাতে হবে (Firebase Authentication-এ Google সাইন-ইন এবং Firestore চালু করে)।</p></div>`;
         }
 
-        const localAdmin = () => sessionStorage.getItem("loggedIn") === "1";
-
+        const localAdmin = () => localStorage.getItem("loggedIn") === "1";
         function renderRoot(){
             clearSubs();
             isAdmin = false;
