@@ -2851,6 +2851,13 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
+    <div id="pushEnableBox"
+     style="position:fixed; right:15px; bottom:80px; z-index:5000;">
+  <button onclick="enablePushNotification()"
+          style="width:auto; padding:10px 16px; border-radius:25px;">
+    🔔 নোটিফিকেশন চালু করুন
+  </button>
+    </div>
     <!-- ===== Firebase Push Notification ===== -->
 <script type="module">
 (async function () {
