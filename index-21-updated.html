@@ -2851,5 +2851,95 @@ if ("serviceWorker" in navigator) {
   });
 }
 </script>
+    <!-- ===== Firebase Push Notification ===== -->
+<script type="module">
+(async function () {
+  const VAPID_KEY = "BOseK4qgoevjK2Y6X0ZOiFRUHBsssiytiiLBtPLw42lX8FTstV7Edu0otCApOom5K-VWZos2VU4DFp14qAiMUx8";
+
+  try {
+    const { initializeApp, getApps, getApp } =
+      await import("https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js");
+
+    const {
+      getMessaging,
+      register,
+      onRegistered,
+      onMessage
+    } = await import("https://www.gstatic.com/firebasejs/13.0.0/firebase-messaging.js");
+
+    const app = getApps().length
+      ? getApp()
+      : initializeApp(FIREBASE_CONFIG);
+
+    const messaging = getMessaging(app);
+
+    // Firebase Installation ID পাওয়া গেলে
+    onRegistered(messaging, (installationId) => {
+      console.log("FCM Installation ID:", installationId);
+
+      // আপাতত ID ব্রাউজারে রেখে দিচ্ছি
+      localStorage.setItem("fcmInstallationId", installationId);
+    });
+
+    window.enablePushNotification = async function () {
+      try {
+        if (!("Notification" in window)) {
+          alert("এই ডিভাইসে নোটিফিকেশন সাপোর্ট করে না।");
+          return;
+        }
+
+        const permission = await Notification.requestPermission();
+
+        if (permission !== "granted") {
+          alert("নোটিফিকেশন অনুমতি দেওয়া হয়নি।");
+          return;
+        }
+
+        await navigator.serviceWorker.ready;
+
+        await register(messaging, {
+          vapidKey: VAPID_KEY
+        });
+
+        alert("✅ নোটিফিকেশন চালু হয়েছে!");
+
+      } catch (error) {
+        console.error("Push notification error:", error);
+        alert("নোটিফিকেশন চালু করতে সমস্যা হয়েছে। Console দেখুন।");
+      }
+    };
+
+    // App খোলা থাকা অবস্থায় FCM message
+    onMessage(messaging, (payload) => {
+      console.log("Foreground FCM:", payload);
+
+      const title =
+        payload.notification?.title ||
+        payload.data?.title ||
+        "মাদরাসা বাইতুল উলুম";
+
+      const body =
+        payload.notification?.body ||
+        payload.data?.body ||
+        "নতুন নোটিফিকেশন এসেছে";
+
+      if (Notification.permission === "granted") {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, {
+            body: body,
+            icon: "./icon-192.png",
+            data: {
+              url: "./index-21-updated.html"
+            }
+          });
+        });
+      }
+    });
+
+  } catch (error) {
+    console.error("Firebase Messaging setup error:", error);
+  }
+})();
+</script>
 </body>
 </html>
