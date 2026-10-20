@@ -2860,93 +2860,120 @@ if ("serviceWorker" in navigator) {
     </div>
     <!-- ===== Firebase Push Notification ===== -->
 <script type="module">
-(async function () {
-  const VAPID_KEY = "BOseK4qgoevjK2Y6X0ZOiFRUHBsssiytiiLBtPLw42lX8FTstV7Edu0otCApOom5K-VWZos2VU4DFp14qAiMUx8";
+
+const VAPID_KEY =
+"BOseK4qgoevjK2Y6X0ZOiFRUHBsssiytiiLBtPLw42lX8FTstV7Edu0otCApOom5K-VWZos2VU4DFp14qAiMUx8";
+
+const firebaseConfigPush = {
+  apiKey: "AIzaSyCanmAbhDzftHsfTanv3J8PH83Re6j0qt4",
+  authDomain: "my-new-project-4fd70.firebaseapp.com",
+  projectId: "my-new-project-4fd70",
+  storageBucket: "my-new-project-4fd70.firebasestorage.app",
+  messagingSenderId: "394052477072",
+  appId: "1:394052477072:web:1cd69b98bde4d40dcb3815"
+};
+
+import {
+  initializeApp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+
+import {
+  getMessaging,
+  getToken,
+  onMessage
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+const pushApp = initializeApp(firebaseConfigPush, "pushApp");
+const messaging = getMessaging(pushApp);
+
+
+window.enablePushNotification = async function () {
 
   try {
-    const { initializeApp, getApps, getApp } =
-      await import("https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js");
 
-    const {
-      getMessaging,
-      register,
-      onRegistered,
-      onMessage
-    } = await import("https://www.gstatic.com/firebasejs/13.0.0/firebase-messaging.js");
+    if (!("Notification" in window)) {
+      alert("এই ডিভাইসে নোটিফিকেশন সাপোর্ট করে না।");
+      return;
+    }
 
-    const app = getApps().length
-      ? getApp()
-      : initializeApp(FIREBASE_CONFIG);
+    const permission = await Notification.requestPermission();
 
-    const messaging = getMessaging(app);
+    if (permission !== "granted") {
+      alert("নোটিফিকেশনের অনুমতি দেওয়া হয়নি।");
+      return;
+    }
 
-    // Firebase Installation ID পাওয়া গেলে
-    onRegistered(messaging, (installationId) => {
-      console.log("FCM Installation ID:", installationId);
+    const registration =
+      await navigator.serviceWorker.register("./service-worker.js");
 
-      // আপাতত ID ব্রাউজারে রেখে দিচ্ছি
-      localStorage.setItem("fcmInstallationId", installationId);
+    await navigator.serviceWorker.ready;
+
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: registration
     });
 
-    window.enablePushNotification = async function () {
+    if (token) {
+
+      console.log("FCM TOKEN:", token);
+
+      localStorage.setItem("fcmToken", token);
+
       try {
-        if (!("Notification" in window)) {
-          alert("এই ডিভাইসে নোটিফিকেশন সাপোর্ট করে না।");
-          return;
-        }
+        await navigator.clipboard.writeText(token);
+      } catch (e) {}
 
-        const permission = await Notification.requestPermission();
+      alert(
+        "✅ নোটিফিকেশন সফলভাবে চালু হয়েছে!\n\nFCM Token তৈরি হয়েছে।"
+      );
 
-        if (permission !== "granted") {
-          alert("নোটিফিকেশন অনুমতি দেওয়া হয়নি।");
-          return;
-        }
+      const box = document.getElementById("pushEnableBox");
+      if (box) box.style.display = "none";
 
-        await navigator.serviceWorker.ready;
+    } else {
 
-        await register(messaging, {
-          vapidKey: VAPID_KEY
-        });
+      alert("FCM Token তৈরি হয়নি। আবার চেষ্টা করুন.");
 
-        alert("✅ নোটিফিকেশন চালু হয়েছে!");
-
-      } catch (error) {
-        console.error("Push notification error:", error);
-        alert("নোটিফিকেশন চালু করতে সমস্যা হয়েছে। Console দেখুন।");
-      }
-    };
-
-    // App খোলা থাকা অবস্থায় FCM message
-    onMessage(messaging, (payload) => {
-      console.log("Foreground FCM:", payload);
-
-      const title =
-        payload.notification?.title ||
-        payload.data?.title ||
-        "মাদরাসা বাইতুল উলুম";
-
-      const body =
-        payload.notification?.body ||
-        payload.data?.body ||
-        "নতুন নোটিফিকেশন এসেছে";
-
-      if (Notification.permission === "granted") {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification(title, {
-            body: body,
-            icon: "./icon-192.png",
-            data: {
-              url: "./index-21-updated.html"
-            }
-          });
-        });
-      }
-    });
+    }
 
   } catch (error) {
-    console.error("Firebase Messaging setup error:", error);
+
+    console.error("FCM ERROR:", error);
+
+    alert(
+      "নোটিফিকেশন চালু হয়নি:\n" +
+      (error.message || error)
+    );
   }
-})();
+};
+
+
+onMessage(messaging, payload => {
+
+  console.log("Foreground message:", payload);
+
+  const title =
+    payload.notification?.title ||
+    payload.data?.title ||
+    "মাদরাসা বাইতুল উলুম";
+
+  const body =
+    payload.notification?.body ||
+    payload.data?.body ||
+    "নতুন নোটিফিকেশন এসেছে";
+
+  navigator.serviceWorker.ready.then(registration => {
+
+    registration.showNotification(title, {
+      body: body,
+      icon: "./icon-192.png",
+      badge: "./icon-192.png"
+    });
+
+  });
+
+});
+
 </script>
 </body>
 </html>
