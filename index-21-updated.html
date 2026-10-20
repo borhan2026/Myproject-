@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="bn">
 <head>
+    <link rel="manifest" href="./manifest.json">
+
+<meta name="theme-color" content="#146b45">
+
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>মাদরাসা বাইতুল উলুম - ম্যানেজমেন্ট সিস্টেম</title>
@@ -2831,5 +2837,19 @@
         return { enableNotif, pickGroupPhoto, pop, act, pickAdminPhoto, delGroup, delUser, pickPhoto, open, restore: restoreWrap, authChanged, adminGoogle, setMode, togPass, emailAuth, resetPass, login, logoutG, saveProfile, editProfile, setTab, renderDm, newGroup, renderNg, togUser, ngAll, createGroup, openChat, send };
     })();
     </script>
+    <script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("./service-worker.js")
+      .then(() => {
+        console.log("Service Worker চালু হয়েছে");
+      })
+      .catch(error => {
+        console.log("Service Worker Error:", error);
+      });
+  });
+}
+</script>
 </body>
 </html>
