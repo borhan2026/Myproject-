@@ -10,6 +10,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>মাদরাসা বাইতুল উলুম - ম্যানেজমেন্ট সিস্টেম</title>
+    <script>
+    /* ===== PWA: একটাই Service Worker (./service-worker.js) + Install ===== */
+    (function(){
+        window.swReady = new Promise(function(resolve){
+            if(!('serviceWorker' in navigator)){ resolve(null); return; }
+            function go(){
+                navigator.serviceWorker.getRegistrations().then(function(regs){
+                    regs.forEach(function(r){
+                        var w = r.active || r.waiting || r.installing;
+                        if(w && /\/sw\.js(\?|$)/.test(w.scriptURL)) r.unregister();
+                    });
+                }).catch(function(){});
+                navigator.serviceWorker.register('./service-worker.js').then(resolve).catch(function(e){ console.warn('SW error:', e); resolve(null); });
+            }
+            if(document.readyState === 'complete') go(); else window.addEventListener('load', go);
+        });
+
+        var deferredPrompt = null, installed = false;
+        function refresh(){ if(window.refreshMenu) window.refreshMenu(); }
+        window.isStandalone = function(){
+            return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+        };
+        window.isIOS = function(){
+            return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        };
+        window.canShowInstall = function(){
+            return !installed && !window.isStandalone() && (!!deferredPrompt || window.isIOS());
+        };
+        window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); deferredPrompt = e; refresh(); });
+        window.addEventListener('appinstalled', function(){ installed = true; deferredPrompt = null; refresh(); });
+        window.installApp = async function(){
+            if(deferredPrompt){
+                deferredPrompt.prompt();
+                try { await deferredPrompt.userChoice; } catch(e){}
+                deferredPrompt = null; refresh();
+                return;
+            }
+            if(window.isIOS()){
+                alert('iPhone/iPad-এ ইনস্টল করতে:\n\n১. Safari-র নিচের Share (□↑) বাটনে চাপুন\n২. "Add to Home Screen" বেছে নিন\n৩. "Add" চাপুন');
+            }
+        };
+    })();
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
@@ -354,9 +397,10 @@
         <div class="logo">
             <a onclick="showPage('page-home')" ondblclick="showLoginOverlay()"><i class="fa-solid fa-mosque"></i> মাদরাসা বাইতুল উলুম</a>
         </div>
-        <div class="menu-wrap" id="menuWrap" style="display:none;">
+        <div class="menu-wrap" id="menuWrap">
             <div class="menu-toggle" id="mobile-menu"><i class="fa-solid fa-ellipsis-vertical"></i></div>
             <div class="dots-menu" id="dotsMenu">
+                <div id="adminMenuItems" style="display:none;">
                 <a onclick="openSettings('set-general')"><i class="fa-solid fa-gear"></i> General Info &amp; Logo</a>
                 <a onclick="openSettings('set-contact')"><i class="fa-solid fa-address-book"></i> Contact Settings</a>
                 <a onclick="openSettings('set-result')"><i class="fa-solid fa-table-list"></i> Result Settings</a>
@@ -364,7 +408,12 @@
                 <a onclick="openSettings('set-receipt')"><i class="fa-solid fa-receipt"></i> Receipt Book Settings</a>
                 <hr>
                 <a onclick="openSettings('set-login')"><i class="fa-solid fa-lock"></i> Login Settings</a>
-                <a onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+                <hr>
+                </div>
+                <a id="menuInstall" style="display:none;" onclick="installApp()"><i class="fa-solid fa-mobile-screen-button"></i> <span>অ্যাপ ইনস্টল করুন</span></a>
+                <a id="menuNotif" onclick="onNotifMenu()"><i class="fa-regular fa-bell"></i> <span>নোটিফিকেশন চালু করুন</span></a>
+                <hr id="menuHrLogout" style="display:none;">
+                <a id="menuLogout" style="display:none;" onclick="logout()"><i class="fa-solid fa-right-from-bracket"></i> <span>লগ আউট</span></a>
             </div>
         </div>
     </nav>
@@ -2139,7 +2188,8 @@
             let adminMenu = document.getElementById("adminMenuBlock");
             let menuWrap = document.getElementById("menuWrap");
             if(adminMenu) adminMenu.style.display = isAdmin ? "block" : "none";
-            if(menuWrap) menuWrap.style.display = isAdmin ? "block" : "none";
+            let adminItems = document.getElementById("adminMenuItems"); if(adminItems) adminItems.style.display = isAdmin ? "block" : "none";
+            refreshMenu();
             if(window.MSG && window.MSG.authChanged) window.MSG.authChanged();
         }
         function attemptLogin(){
@@ -2158,9 +2208,59 @@
                 document.getElementById("loginError").innerText = "❌ ভুল ইউজারনেম অথবা পাসওয়ার্ড";
             }
         }
-        function logout(){
-            localStorage.removeItem("loggedIn")
-            location.reload();
+        /* পুরোনো sessionStorage লগইন (থাকলে) localStorage-এ নিয়ে আসা */
+        (function(){
+            try {
+                if(sessionStorage.getItem("loggedIn") === "1"){ localStorage.setItem("loggedIn", "1"); }
+                sessionStorage.removeItem("loggedIn");
+            } catch(e){}
+        })();
+
+        /* ⋮ মেনুর অবস্থা (ইনস্টল / নোটিফিকেশন / লগ আউট) */
+        function refreshMenu(){
+            const admin = localStorage.getItem("loggedIn") === "1";
+            const signed = admin || !!(window.MSG && window.MSG.isSignedIn && window.MSG.isSignedIn());
+            const show = (id, on) => { const el = document.getElementById(id); if(el) el.style.display = on ? "" : "none"; };
+            show("menuInstall", typeof window.canShowInstall === "function" && window.canShowInstall());
+            const n = document.getElementById("menuNotif");
+            if(n){
+                if(!("Notification" in window)){ n.style.display = "none"; }
+                else {
+                    n.style.display = "";
+                    const p = Notification.permission, ic = n.querySelector("i"), tx = n.querySelector("span");
+                    if(p === "granted"){ ic.className = "fa-solid fa-bell"; tx.textContent = "নোটিফিকেশন চালু আছে"; n.style.opacity = "0.7"; }
+                    else if(p === "denied"){ ic.className = "fa-solid fa-bell-slash"; tx.textContent = "নোটিফিকেশন বন্ধ (সেটিংস থেকে চালু করুন)"; n.style.opacity = ""; }
+                    else { ic.className = "fa-regular fa-bell"; tx.textContent = "নোটিফিকেশন চালু করুন"; n.style.opacity = ""; }
+                }
+            }
+            show("menuHrLogout", signed);
+            show("menuLogout", signed);
+        }
+        window.refreshMenu = refreshMenu;
+        try {
+            if(navigator.permissions && navigator.permissions.query){
+                navigator.permissions.query({ name: "notifications" }).then(p => { p.onchange = refreshMenu; }).catch(() => {});
+            }
+        } catch(e){}
+        function onNotifMenu(){
+            if(!("Notification" in window)) return;
+            if(Notification.permission === "granted") return;
+            if(Notification.permission === "denied"){
+                alert('এই সাইটের নোটিফিকেশন ব্লক করা আছে।\nব্রাউজার/ফোনের সেটিংস থেকে এই অ্যাপের নোটিফিকেশন "Allow" করুন।');
+                return;
+            }
+            if(window.enablePushNotification) window.enablePushNotification();
+            else alert("একটু পরে আবার চেষ্টা করুন।");
+        }
+
+        /* লগ আউট: Firebase signOut + এডমিন লগইন ফ্ল্যাগ মোছা (ছাত্র তথ্য/সেটিংস অক্ষত) */
+        async function logout(){
+            if(!confirm("আপনি কি লগ আউট করতে চান?")) return;
+            localStorage.removeItem("loggedIn");
+            try { sessionStorage.removeItem("loggedIn"); } catch(e){}
+            try { if(window.MSG && window.MSG.logoutAll) await window.MSG.logoutAll(); } catch(e){ console.error(e); }
+            updateAdminUI();
+            showPage('page-home');
         }
 
         /* ===================== Live Clock & Date ===================== */
@@ -2248,37 +2348,28 @@
             if(cb) cb();
         }
 
-       async function ensureFb(){
-    if(fb) return fb;
-
-    const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
-
-    const [appM, authM, fsM] = await Promise.all([
-        import(base + 'firebase-app.js'),
-        import(base + 'firebase-auth.js'),
-        import(base + 'firebase-firestore.js')
-    ]);
-
-    const app = appM.initializeApp(FIREBASE_CONFIG);
-
-    fb = {
-        auth: authM.getAuth(app),
-        db: fsM.getFirestore(app),
-        A: authM,
-        F: fsM
-    };
-
-    // লগইন অ্যাপ বন্ধ করার পরও মনে রাখবে
-    await authM.setPersistence(
-        fb.auth,
-        authM.browserLocalPersistence
-    );
-
-    // Firebase login অবস্থার পরিবর্তন দেখবে
-    fb.A.onAuthStateChanged(fb.auth, onAuth);
-
-    return fb;
+       let fbPromise = null;
+        function ensureFb(){
+            if(!fbPromise) fbPromise = initFb().catch(e => { fbPromise = null; throw e; });
+            return fbPromise;
         }
+        async function initFb(){
+            const base = `https://www.gstatic.com/firebasejs/${FB_VER}/`;
+            const [appM, authM, fsM] = await Promise.all([
+                import(base + 'firebase-app.js'),
+                import(base + 'firebase-auth.js'),
+                import(base + 'firebase-firestore.js')
+            ]);
+            const app = appM.getApps().length ? appM.getApp() : appM.initializeApp(FIREBASE_CONFIG);
+            const auth = authM.getAuth(app);
+            /* অ্যাপ বন্ধ করলেও Gmail লগইন মনে রাখবে (শুধু Logout-এ শেষ হবে) */
+            try { await authM.setPersistence(auth, authM.browserLocalPersistence); } catch(e){ console.warn('persistence:', e); }
+            fb = { auth, db: fsM.getFirestore(app), A: authM, F: fsM };
+            /* আগের সেশন পুনরুদ্ধার */
+            fb.A.onAuthStateChanged(auth, onAuth);
+            return fb;
+        }
+
 
         async function onAuth(user){
             me = user; profile = null; authReady = true;
@@ -2290,6 +2381,7 @@
                 } catch(e){ console.error(e); }
             }
             syncNotify();
+            if(window.refreshMenu) window.refreshMenu();
             if(pageActive()) renderRoot();
         }
 
@@ -2319,15 +2411,15 @@
             clearSubs();
             isAdmin = false;
             if(localAdmin()){
-                if(me && isGAdmin){ isAdmin = true; renderAdminRoot(); return injectBanner(); }
+                if(me && isGAdmin){ isAdmin = true; renderAdminRoot(); return; }
                 return renderAdminVerify();
             }
             if(!me) return renderLogin();
             if(isGAdmin) return renderAdminNotice();
             if(!profile) return renderProfileForm(false);
-            renderUserRoot(); return injectBanner();
+            renderUserRoot(); return;
         }
-        function authChanged(){ syncNotify(); if(authReady && pageActive()) renderRoot(); }
+        function authChanged(){ syncNotify(); if(window.refreshMenu) window.refreshMenu(); if(authReady && pageActive()) renderRoot(); }
 
         /* ---------- Admin: Gmail নিশ্চিতকরণ ---------- */
         function renderAdminVerify(){
@@ -2416,6 +2508,14 @@
             }
         }
         function logoutG(){ fb.A.signOut(fb.auth); }
+        async function logoutAll(){
+            try {
+                const f = await ensureFb();
+                try { await f.auth.authStateReady(); } catch(e){}
+                if(f.auth.currentUser) await f.A.signOut(f.auth);
+            } catch(e){ console.error(e); }
+        }
+        function isSignedIn(){ return !!me; }
 
         function renderProfileForm(isEdit){
             const p = profile || {};
@@ -2762,11 +2862,11 @@
         }
         async function registerSW(){
             if(!('serviceWorker' in navigator)) return;
-            try { swReg = await navigator.serviceWorker.register('sw.js'); } catch(e){ swReg = null; }
+            try { swReg = await window.swReady; } catch(e){ swReg = null; }
         }
         async function showSystem(title, body, tag){
             if(!('Notification' in window) || Notification.permission !== 'granted') return false;
-            try { if(swReg){ await swReg.showNotification(title, { body, tag, renotify: true, vibrate: [150, 80, 150] }); return true; } } catch(e){}
+            try { if(!swReg) swReg = await window.swReady; if(swReg){ await swReg.showNotification(title, { body, tag, renotify: true, vibrate: [150, 80, 150], icon: './icon-192.png', badge: './icon-192.png', data: { url: './index-21-updated.html' } }); return true; } } catch(e){}
             try { const n = new Notification(title, { body, tag }); n.onclick = () => { window.focus(); n.close(); }; return true; } catch(e){}
             return false;
         }
@@ -2828,23 +2928,9 @@
             }, e => console.error(e));
         }
 
-        function notifBanner(){
-            if(!('Notification' in window) || Notification.permission !== 'default') return '';
-            return `<div class="notif-banner"><span><i class="fa-regular fa-bell"></i> নতুন মেসেজের নোটিফিকেশন চালু করুন</span><button onclick="MSG.enableNotif()">চালু করুন</button></div>`;
-        }
-        function injectBanner(){
-            const html = notifBanner(); if(!html) return;
-            const sb = root().querySelector('.section-box'); if(!sb) return;
-            const h = sb.querySelector('h2');
-            (h || sb).insertAdjacentHTML(h ? 'afterend' : 'afterbegin', html);
-        }
-        async function enableNotif(){
-            try {
-                const p = await Notification.requestPermission();
-                if(p === 'granted'){ await registerSW(); beep(); showSystem('নোটিফিকেশন চালু হয়েছে', 'নতুন মেসেজ এলে এখানে জানানো হবে', 'test'); }
-            } catch(e){}
-            const b = document.querySelector('.notif-banner'); if(b) b.remove();
-        }
+        /* নোটিফিকেশন চালুর কাজ এখন একটাই জায়গায় (window.enablePushNotification) — ⋮ মেনু থেকে */
+        function enableNotif(){ return window.enablePushNotification ? window.enablePushNotification() : undefined; }
+
         if('Notification' in window && Notification.permission === 'granted') registerSW();
         setTimeout(() => { if(configured()) ensureFb().catch(() => {}); }, 1500);
 
@@ -2855,146 +2941,87 @@
             if(authReady) renderRoot();
         }
 
-        return { enableNotif, pickGroupPhoto, pop, act, pickAdminPhoto, delGroup, delUser, pickPhoto, open, restore: restoreWrap, authChanged, adminGoogle, setMode, togPass, emailAuth, resetPass, login, logoutG, saveProfile, editProfile, setTab, renderDm, newGroup, renderNg, togUser, ngAll, createGroup, openChat, send };
+        return { enableNotif, pickGroupPhoto, pop, act, pickAdminPhoto, delGroup, delUser, pickPhoto, open, restore: restoreWrap, authChanged, logoutAll, isSignedIn, adminGoogle, setMode, togPass, emailAuth, resetPass, login, logoutG, saveProfile, editProfile, setTab, renderDm, newGroup, renderNg, togUser, ngAll, createGroup, openChat, send };
     })();
     </script>
-    <script>
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("./service-worker.js")
-      .then(() => {
-        console.log("Service Worker চালু হয়েছে");
-      })
-      .catch(error => {
-        console.log("Service Worker Error:", error);
-      });
-  });
+    <script type="module">
+/* ===== Firebase Cloud Messaging (একটাই জায়গায়) ===== */
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+const VAPID_KEY = "BOseK4qgoevjK2Y6X0ZOiFRUHBsssiytiiLBtPLw42lX8FTstV7Edu0otCApOom5K-VWZos2VU4DFp14qAiMUx8";
+let messaging = null;
+
+async function getMsg(){
+    if(messaging) return messaging;
+    try {
+        if(!(await isSupported())) return null;
+        const app = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+        messaging = getMessaging(app);
+        /* অ্যাপ খোলা থাকলে (foreground) */
+        onMessage(messaging, async payload => {
+            const title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || "মাদরাসা বাইতুল উলুম";
+            const body = (payload.notification && payload.notification.body) || (payload.data && payload.data.body) || "নতুন নোটিফিকেশন এসেছে";
+            try {
+                const reg = await window.swReady;
+                if(reg) reg.showNotification(title, { body, icon: "./icon-192.png", badge: "./icon-192.png", data: { url: (payload.data && payload.data.url) || "./index-21-updated.html" } });
+            } catch(e){ console.warn(e); }
+        });
+        return messaging;
+    } catch(e){ console.warn("FCM unavailable:", e); return null; }
 }
-</script>
-    <div id="pushEnableBox"
-     style="position:fixed; right:15px; bottom:80px; z-index:5000;">
-  <button onclick="enablePushNotification()"
-          style="width:auto; padding:10px 16px; border-radius:25px;">
-    🔔 নোটিফিকেশন চালু করুন
-  </button>
-    </div>
-    <!-- ===== Firebase Push Notification ===== -->
-<script type="module">
 
-const VAPID_KEY =
-"BOseK4qgoevjK2Y6X0ZOiFRUHBsssiytiiLBtPLw42lX8FTstV7Edu0otCApOom5K-VWZos2VU4DFp14qAiMUx8";
-
-const firebaseConfigPush = {
-  apiKey: "AIzaSyCanmAbhDzftHsfTanv3J8PH83Re6j0qt4",
-  authDomain: "my-new-project-4fd70.firebaseapp.com",
-  projectId: "my-new-project-4fd70",
-  storageBucket: "my-new-project-4fd70.firebasestorage.app",
-  messagingSenderId: "394052477072",
-  appId: "1:394052477072:web:1cd69b98bde4d40dcb3815"
-};
-
-import {
-  initializeApp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-
-import {
-  getMessaging,
-  getToken,
-  onMessage
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
-
-const pushApp = initializeApp(firebaseConfigPush, "pushApp");
-const messaging = getMessaging(pushApp);
-
-
-window.enablePushNotification = async function () {
-
-  try {
-
-    if (!("Notification" in window)) {
-      alert("এই ডিভাইসে নোটিফিকেশন সাপোর্ট করে না।");
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-
-    if (permission !== "granted") {
-      alert("নোটিফিকেশনের অনুমতি দেওয়া হয়নি।");
-      return;
-    }
-
-    const registration =
-      await navigator.serviceWorker.register("./service-worker.js");
-
+/* token আনে/রিফ্রেশ করে; বদলালে localStorage আপডেট */
+async function fetchToken(){
+    const m = await getMsg();
+    if(!m) return null;
+    const reg = await window.swReady;
+    if(!reg) return null;
     await navigator.serviceWorker.ready;
-
-    const token = await getToken(messaging, {
-      vapidKey: VAPID_KEY,
-      serviceWorkerRegistration: registration
-    });
-
-    if (token) {
-
-      console.log("FCM TOKEN:", token);
-
-      localStorage.setItem("fcmToken", token);
-
-      try {
-        await navigator.clipboard.writeText(token);
-      } catch (e) {}
-
-      alert(
-        "✅ নোটিফিকেশন সফলভাবে চালু হয়েছে!\n\nFCM Token তৈরি হয়েছে।"
-      );
-
-      const box = document.getElementById("pushEnableBox");
-      if (box) box.style.display = "none";
-
-    } else {
-
-      alert("FCM Token তৈরি হয়নি। আবার চেষ্টা করুন.");
-
+    const token = await getToken(m, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if(token && localStorage.getItem("fcmToken") !== token){
+        localStorage.setItem("fcmToken", token);
+        localStorage.setItem("fcmTokenAt", String(Date.now()));
     }
+    return token || null;
+}
 
-  } catch (error) {
-
-    console.error("FCM ERROR:", error);
-
-    alert(
-      "নোটিফিকেশন চালু হয়নি:\n" +
-      (error.message || error)
-    );
-  }
+/* শুধু ব্যবহারকারী বাটন চাপলে অনুমতি চাওয়া হবে */
+window.enablePushNotification = async function(){
+    if(!("Notification" in window)){ alert("এই ডিভাইসে নোটিফিকেশন সাপোর্ট করে না।"); return; }
+    if(Notification.permission === "denied"){
+        alert('এই সাইটের নোটিফিকেশন ব্লক করা আছে।\nব্রাউজার/ফোনের সেটিংস থেকে "Allow" করুন।');
+        return;
+    }
+    try {
+        const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+        if(permission !== "granted"){
+            if(permission === "denied") alert("নোটিফিকেশনের অনুমতি দেওয়া হয়নি।");
+            return;
+        }
+        const token = await fetchToken();
+        if(token){
+            console.log("FCM TOKEN:", token);
+            try { await navigator.clipboard.writeText(token); } catch(e){}
+            alert("✅ নোটিফিকেশন সফলভাবে চালু হয়েছে!");
+        } else {
+            alert("FCM Token তৈরি হয়নি। আবার চেষ্টা করুন।");
+        }
+    } catch(error){
+        console.error("FCM ERROR:", error);
+        alert("নোটিফিকেশন চালু হয়নি:\n" + (error.message || error));
+    } finally {
+        if(window.refreshMenu) window.refreshMenu();
+    }
 };
 
-
-onMessage(messaging, payload => {
-
-  console.log("Foreground message:", payload);
-
-  const title =
-    payload.notification?.title ||
-    payload.data?.title ||
-    "মাদরাসা বাইতুল উলুম";
-
-  const body =
-    payload.notification?.body ||
-    payload.data?.body ||
-    "নতুন নোটিফিকেশন এসেছে";
-
-  navigator.serviceWorker.ready.then(registration => {
-
-    registration.showNotification(title, {
-      body: body,
-      icon: "./icon-192.png",
-      badge: "./icon-192.png"
-    });
-
-  });
-
-});
-
+/* অ্যাপ খুললে: অনুমতি আগেই দেওয়া থাকলে চুপচাপ token যাচাই/রিফ্রেশ (কোনো popup নেই) */
+function startup(){
+    if("Notification" in window && Notification.permission === "granted"){
+        fetchToken().catch(e => console.warn("token refresh:", e)).finally(() => { if(window.refreshMenu) window.refreshMenu(); });
+    } else if(window.refreshMenu){ window.refreshMenu(); }
+}
+if(document.readyState === "complete") startup(); else window.addEventListener("load", startup);
 </script>
 </body>
 </html>
